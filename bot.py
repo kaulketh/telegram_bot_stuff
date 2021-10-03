@@ -13,6 +13,7 @@ class SimpleBot:
     def __init__(self, token, poll=5.0):
         sys.stdout.write(
             f"Initialize instance of {self.__class__.__name__}.\n")
+
         self.__token = token
         self.__update_poll = poll
 
@@ -26,9 +27,9 @@ class SimpleBot:
         self.__last_msg_id = 0
         self.__msg_storage = 0
 
-        self.__loop()
+        self.__run()
 
-    def _get_last_message(self):
+    def _get_updates(self):
         while True:
             self.__update = OsCmd(curl_updates, self.__token).out()
             # decode all results from byte
@@ -43,7 +44,6 @@ class SimpleBot:
                 self.__msg_storage = self.__last_msg_id
             self.__last_from = self.__read(self.__last_message, "from")
             self.__from_id = self.__read(self.__last_from, "id")
-
             # check for new message
             if self.__last_msg_id == self.__msg_storage:
                 continue
@@ -58,7 +58,8 @@ class SimpleBot:
                         f"'{self.__msg_text}' from {self.__from_id}.\n")
                 else:
                     # ignore other then text
-                    sys.stderr.write("Wrong content type!")
+                    self.send(self.__from_id, "????")
+                    sys.stderr.write("Wrong content type!\n")
                     # TODO: type exception!?
                     continue
             time.sleep(self.__update_poll)
@@ -77,9 +78,9 @@ class SimpleBot:
         for k in found(update, key):
             return k
 
-    def __loop(self):
+    def __run(self):
         try:
-            self.__checker = Process(target=self._get_last_message)
+            self.__checker = Process(target=self._get_updates)
             self.__checker.start()
             sys.stdout.write(
                 f"Bot is running... "
@@ -96,6 +97,10 @@ class SimpleBot:
     def send(self, chat_id, text):
         OsCmd(curl_send, self.__token, chat_id, text)
         sys.stdout.write(f"Sent '{text}' to {chat_id}\n")
+
+    @property
+    def text(self):
+        return self.__msg_text
 
     @property
     def update(self):
