@@ -8,15 +8,14 @@ import sys
 import traceback
 from time import sleep
 
-from secrets import THK
 from .constants import STOPPED, WRONG_CONTENT, RUNNING
 from .os_cmd import OsCmd, curl_updates, curl_send
 
 
 class SimpleBot:
 
-    def __init__(self, token, poll=5.0):
-        self.__admin = THK
+    def __init__(self, token, admin, poll=5.0):
+        self.__admin = admin
         self.__token = token
         self.__update_poll = poll
 
@@ -66,8 +65,8 @@ class SimpleBot:
         self.__msg_id = read(self.__result, "message_id")
         self.__from = read(self.__msg, "from")
         self.__from_id = read(self.__from, "id")
-        return self.__result, self.__msg_text, self.__msg, \
-               self.__from, self.__from_id, self.__msg_id
+        # noinspection LongLine
+        return self.__result, self.__msg_text, self.__msg, self.__from, self.__from_id, self.__msg_id
 
     def __run(self):
         try:
