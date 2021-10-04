@@ -8,7 +8,7 @@ curl_send = "curl -s -o /dev/nul/ -X  POST \"https://api.telegram.org/bot{}/" \
             "sendMessage?chat_id={}&text={}\""
 '''string format required: (bot token, chat id, message text)'''
 
-curl_updates = "curl -s -X GET \"https://api.telegram.org/bot{}/getUpdates\""
+curl_updates = "curl -s -X POST \"https://api.telegram.org/bot{}/getUpdates\""
 '''string format required: bot token'''
 
 
