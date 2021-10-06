@@ -1,29 +1,30 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
-import concurrent.futures
 import json
 import multiprocessing
 import sys
 import traceback
+from concurrent.futures import ThreadPoolExecutor
+from json import JSONDecodeError
 from time import sleep
 
-from .constants import STOPPED, WRONG_CONTENT, RUNNING
 from .os_cmd import OsCmd, curl_updates, curl_send
 
 
 class SimpleBot:
 
-    def __init__(self, token, admin, poll=5.0):
-        self.__admin = admin
+    def __init__(self, token, chat_id, handle_function, poll=5.0):
+        self.__admin = chat_id
         self.__token = token
+        self.__handle = handle_function
         self.__update_poll = poll
 
         (filename, line_number, function_name, text) = \
             traceback.extract_stack()[-2]
         self.__name = text[:text.find('=')].strip()
         sys.stdout.write(
-            f"Initialize '{self.__name}' as instance "
+            f"## Initialize '{self.__name}' as instance "
             f"of {self.__class__.__name__}.\n")
 
         self.__result = None
@@ -34,28 +35,42 @@ class SimpleBot:
         self.__msg_id = 0
         self.__msg_storage = 0
         self.__loop = multiprocessing.Process(target=self._loop_func)
-
         self.__run()
 
     def __get_update(self):
-        # helper
-        def read(update, key):
-            def found(_d: dict, _key: str):
-                for _k, _v in _d.items():
-                    if _k == _key:
-                        yield _v
-                    elif isinstance(_v, dict):
-                        for _val in found(_v, _key):
-                            yield _val
 
-            for k in found(update, key):
-                return k
+        def read(update, key):
+            """
+            get value of any key in Json object
+            """
+            try:
+
+                def found(_d: dict, _key: str):
+                    for _k, _v in _d.items():
+                        if _k == _key:
+                            yield _v
+                        elif isinstance(_v, dict):
+                            for _val in found(_v, _key):
+                                yield _val
+
+                for k in found(update, key):
+                    return k
+            except (TypeError, StopIteration) as ts:
+                sys.stderr.write(f"!! While searching for '{key}' in {update} "
+                                 f"an error occurred:\n{ts}\n")
+                self.stop()
 
         # cUrl
         response = OsCmd(curl_updates, self.__token).out()
-        # decode all results from byte
-        response = json.loads(
-            response.decode('utf-8').replace("'", '"'))
+
+        # decode response and load as JSON document
+        try:
+            response = json.loads(response.decode('utf-8').replace("'", '"'))
+        except JSONDecodeError as jde:
+            sys.stderr.write(f"!! While decoding '{response}' "
+                             f"JSONDecodeError occurred:\n{jde}\n")
+            self.stop()
+
         # get last of the returned results
         self.__result = read(response, "result")[-1]
         # extract text from last result
@@ -72,17 +87,15 @@ class SimpleBot:
         try:
             self.__loop.start()
             sys.stdout.write(
-                f"{RUNNING}"
+                f"## Bot is running... "
                 f"API polling every {self.__update_poll} second(s)\n")
-            self.send(self.__admin, RUNNING)
+            self.send(self.__admin, "Bot is running...")
         except KeyboardInterrupt:
-            sys.stderr.write(f"Program interrupted\n")
-            self.__loop.terminate()
-            exit()
+            sys.stderr.write(f"!! Program interrupted\n")
+            self.stop()
         except Exception as e:
-            sys.stderr.write(f"An error occurred: {e}\n")
-            self.__loop.terminate()
-            exit()
+            sys.stderr.write(f"!! An error occurred: {e}\n")
+            self.stop()
 
     def _loop_func(self):
         while True:
@@ -98,28 +111,34 @@ class SimpleBot:
                 # store last msg id
                 self.__msg_storage = self.__msg_id
                 if self.__msg_text is not None:
-                    sys.stdout.write(
-                        f"Got new message: {self.__msg_storage} "
-                        f"'{self.__msg_text}' from {self.__from_id}.\n")
-                else:
                     # TODO: type exception!?
+                    sys.stdout.write(
+                        f">> Got message|"
+                        f"{self.__msg_storage}|"
+                        f"{self.__msg_text}|"
+                        f"{self.__from_id}\n")
+                    self.__handle(self)
+                else:
+                    # type exception!?
                     # ignore other then text
-                    sys.stderr.write(f"{WRONG_CONTENT}\n")
-                    self.send(self.user_id, WRONG_CONTENT)
+                    sys.stderr.write("!! Wrong content type!\n")
+                    self.send(self.user_id, "Wrong content type!")
                     continue
             sleep(self.__update_poll)
 
     def send(self, chat_id, text):
         OsCmd(curl_send, self.__token, chat_id, text)
-        sys.stdout.write(f"Message sent: '{text}' to {chat_id}\n")
+        sys.stdout.write(f"<< Sent Message|"
+                         f"{text}|"
+                         f"{chat_id}\n")
 
     def stop(self):
         if self.__loop is not None:
             if self.__loop.is_alive():
                 self.__loop.terminate()
-        self.send(self.__admin, STOPPED)
+        self.send(self.__admin, "Bot stopped.")
         del self
-        sys.stdout.write(f"{STOPPED}\n")
+        sys.stdout.write("## Bot stopped.\n")
 
     @property
     def update(self):
@@ -128,7 +147,7 @@ class SimpleBot:
         higher-level API for threading, including passing return values or
         exceptions from a worker thread to the main thread:
         """
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor() as executor:
             results = executor.submit(self.__get_update).result()
             return results
 
